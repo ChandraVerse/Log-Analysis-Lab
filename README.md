@@ -111,6 +111,7 @@ Planned next steps for this repo:
 ---
 
 🤝 Contributions
+
 This is a learning-focused project. Suggestions, improvements, and additional scenarios are welcome.
 Potential contributions:
    New log scenarios (e.g., insider threat, misconfigured S3 buckets).
