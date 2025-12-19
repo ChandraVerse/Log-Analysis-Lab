@@ -1,0 +1,112 @@
+SOC Analyst Log Analysis Documentation
+1. Overview
+This document summarizes the end-to-end analysis of a synthetic multi-source log file ingested into a log management platform to simulate real-world Security Operations Center (SOC) workflows.
+The dataset was intentionally crafted to represent multiple attack techniques across authentication, web application, endpoint, network, cloud, and database layers.
+
+Primary goals:
+
+* Practice structured log analysis and correlation across sources.
+* Identify and understand common attacker behaviors as they appear in logs.
+* Derive detection ideas and monitoring strategies suitable for a SOC environment.
+* Capture findings and reasoning in a professional, reproducible format.
+
+---
+
+2. Log Sources and Structure
+The log file is in JSON Lines (JSONL) format, with one JSON object per line. Each record contains normalized fields to simplify searching and correlation, including:
+
+* ts – Event timestamp (UTC).
+* env – Environment (e.g., lab).
+* log_type – High-level source category:
+  > auth, web, endpoint, network, identity, cloud, db.
+* host – Hostname or system identifier.
+* app – Application or subsystem (e.g., sshd, nginx, cloudtrail).
+* severity – Event severity (info, warning, critical).
+* event – Normalized event name (e.g., login_failed, waf_alert).
+* Additional fields:
+  > Auth: user, src_ip, command, method, reason.
+  > Web: client_ip, path, status, ua, query.
+  > Endpoint: process, cmdline, parent.
+  > Network: dst_ip, dst_port, action, ja3.
+  > Cloud: actor, action_name, policy, mfa_used.
+  > DB: db_user, db_name, query_fingerprint, rows_returned, duration_ms.
+
+This normalized schema enables field-based searches and correlations, mirroring how production SIEM/log platforms operate.
+
+---
+
+3. Analysis Methodology
+The investigation followed a structured SOC-style workflow:
+
+* Baseline understanding
+  > Identify log types and typical benign events (e.g., normal web requests, successful logins, standard outbound HTTPS).
+
+* Detection-focused searches
+  > Use targeted queries for known TTPs (Tactics, Techniques, Procedures) such as:
+    > Brute-force and password spray.
+    > Web reconnaissance and SQL injection.
+    > Malware execution and C2 traffic.
+    > Cloud IAM privilege escalation.
+    > Database exfiltration.
+    > Log tampering and covering tracks.
+
+* Event correlation
+  > Pivot on shared fields (user, src_ip, src_host) to link activity across layers.
+
+* Timeline reconstruction
+  > Order key events chronologically to understand attacker progression.
+
+* Findings, impact, and detection ideas
+  > Summarize what happened, why it matters, and how to detect it systematically.
+
+---
+
+4. Detailed Findings
+4.1 SSH Brute-Force Attacks
+  * Observed behavior:
+    > Multiple login_failed events on log_type: auth, targeting user: root on host: linux-web-01.
+    > Repeated failures from a single external src_ip (geo-located to Russia in the synthetic data).
+    > A subsequent event: bruteforce_suspected with fail_count_5m elevated and action: blocked, indicating automated blocking (e.g., Fail2Ban-like control).
+* Interpretation:
+  > This pattern matches a classic SSH brute-force attack: an attacker systematically guesses passwords for the root account from a single IP in a short time period.
+
+* Detection ideas:
+  > Threshold rule: N failed SSH logins from a single source IP within X minutes.
+  > Additional condition: target is a highly privileged account (e.g., root, admin).
+  > Look for follow-up successful login from the same IP for potential compromise.
+
+---
+
+4.2 Web Reconnaissance & SQL Injection
+  * Observed behavior:
+    > log_type: web events with paths such as:
+                /.env, /wp-login.php, /phpinfo.php.
+    > User-agent indicating an automated scanner (Nikto style).
+    > A critical WAF event:
+      # event: waf_alert, path: /search, with a query parameter resembling q=' OR 1=1--.
+      # status: 403, rule_id indicating SQL injection prevention.
+
+  * Interpretation:
+    > The attacker performs reconnaissance by probing for common misconfigurations or sensitive files, then attempts a SQL injection that is blocked by the WAF.
+
+  * Detection ideas:
+    > Monitor for scanner-like user agents and frequent 404s on sensitive paths.
+    > Raise alerts on WAF signatures for SQL injection, especially if they are not consistently blocked.
+    > Correlate scanner IPs across web, WAF, and potentially firewall logs.
+
+---
+
+4.3 Password Spray
+  * Observed behavior:
+    > log_type: identity, app: sso, with event: password_spray_suspected.
+    > Elevated users_attempted value (e.g., 18 users).
+    > All attempts failing in a short time window (fail_count_10m > 0, success_count_10m = 0).
+    > Single source IP associated with all attempts.
+
+  * Interpretation:
+    > Unlike brute-force against a single user, password spraying spreads attempts across many users to evade lockouts and simple thresholds. The logs explicitly flag this behavior.
+
+  * Detection ideas:
+    > Count distinct user values per src_ip over a given time window.
+    > Flag when a single IP attempts logins for many accounts with consistent failures.
+    > Combine with impossible travel or unusual geo indicators for higher confidence.
