@@ -4,7 +4,7 @@
 This repository contains a synthetic multi-source log file and supporting notes created to simulate real-world SOC analyst investigations across multiple layers of an environment (auth, web, endpoint, network, cloud, and database).
 The goal of this project is to practice structured log analysis, detection engineering, and incident investigation workflows using a modern log management tool (such as Loggly).
 
-
+---
 
 🎯 Objectives
 
