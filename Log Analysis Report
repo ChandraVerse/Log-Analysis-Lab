@@ -110,3 +110,46 @@ The investigation followed a structured SOC-style workflow:
     > Count distinct user values per src_ip over a given time window.
     > Flag when a single IP attempts logins for many accounts with consistent failures.
     > Combine with impossible travel or unusual geo indicators for higher confidence.
+
+---
+
+4.4 Impossible Travel
+  * Observed behavior:
+    > event: mfa_success for user finance1 from geo_country: IN.
+    > Within one minute, event: impossible_travel for the same user from geo_country: US.
+    > Fields such as prev_ip, prev_geo_country, and time_since_prev_minutes highlight the anomaly.
+
+  * Interpretation:
+    > This is a strong signal of potential account or session compromise; the same account is apparently active from geographically distant locations in an impossible time frame.
+
+  * Detection ideas:
+    > Compare geographic locations of consecutive logins for a user.
+    > Flag if the required travel speed exceeds realistic thresholds.
+    > Prioritize when combined with high-privilege users or sensitive applications (e.g., finance, admin).
+
+---
+
+4.5 Malware Indicators (Endpoint + Network)
+  * Observed behavior:
+
+    > Endpoint logs:
+      # log_type: endpoint, event: process_start.
+      # process: powershell.exe with cmdline including -enc and a long Base64 string (encoded PowerShell).
+
+    > DNS logs:
+      # event: dns_query for a domain resembling a legitimate vendor (update-microsoft-security[...]), but with subtle differences suggesting typosquatting.
+
+    > Firewall logs:
+      # event: outbound_connection from the same host to an external IP and non-standard port (e.g., 8080).
+      # Message indicating “Possible C2 beacon” based on behavior.
+
+  * Interpretation:
+    > This chain suggests malicious script execution on the endpoint followed by DNS resolution to a suspicious domain and C2 communication to an external IP. It models post-exploitation behavior.
+
+  * Detection ideas:
+    > Flag PowerShell commands with -enc, especially those launched by user-facing processes.
+    > Monitor DNS queries to lookalike or low-reputation domains.
+    > Detect periodic short outbound connections to a small set of external IPs (beaconing patterns).
+    > Correlate endpoint and network logs via src_host / src_ip.
+
+---
