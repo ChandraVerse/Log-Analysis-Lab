@@ -153,3 +153,73 @@ The investigation followed a structured SOC-style workflow:
     > Correlate endpoint and network logs via src_host / src_ip.
 
 ---
+
+4.6 Cloud Privilege Escalation (IAM)
+  * Observed behavior:
+    > log_type: cloud, app: cloudtrail style logs.
+    > event: iam_policy_change where a non-admin or temporary user attaches AdministratorAccess to another user.
+    > mfa_used: false for the action, indicating no MFA protection for a highly sensitive change.
+
+  * Interpretation:
+    > This is a high-risk IAM privilege escalation: a user account with limited intended privileges effectively grants admin rights, without MFA. In a real environment, this could enable full compromise of cloud resources.
+
+  * Detection ideas:
+    > Monitor for AttachUserPolicy / AttachRolePolicy actions involving AdministratorAccess or similar high-privilege policies.
+    > Require and validate mfa_used = true for sensitive IAM changes.
+    > Correlate with login events from unusual IPs or locations.
+
+---
+
+4.7 Database Exfiltration
+  * Observed behavior:
+    > log_type: db, event: suspicious_query.
+    > query_fingerprint: UNION_SELECT.
+    > High rows_returned (e.g., 5000) and non-trivial duration_ms.
+    > Access via db_user: appuser from an internal application host.
+
+  * Interpretation:
+    > The combination of UNION SELECT patterns, large result sets, and atypical query fingerprints for an application account suggests potential SQL injection and data exfiltration.
+
+  * Detection ideas:
+    > Flag queries with known exfiltration patterns (UNION SELECT, INFORMATION_SCHEMA, etc.).
+    > Monitor for unusually high rows_returned per query for application users.
+    > Correlate with web/WAF logs showing injection attempts.
+
+---
+
+4.8 Log Tampering and Covering Tracks
+  * Observed behavior:
+    > event: privilege_escalation via sudo (e.g., sudo useradd backup_admin).
+    > Subsequent event: audit_log_cleared on the same host.
+    > Command field showing truncate -s 0 /var/log/auth.log.
+
+  * Interpretation:
+    > This sequence indicates successful privilege escalation followed by deliberate log wiping to erase evidence. This is a strong indicator of a serious compromise and an attempt to evade detection.
+
+  * Detection ideas:
+    > Alert on log-clearing commands targeting key log files (auth.log, syslog, Windows event logs).
+    > Pay particular attention when such commands follow privilege escalation, suspicious logins, or other critical events.
+    > Implement additional immutable or remote logging to prevent total loss of evidence.
+
+---
+
+5. Monitoring Strategy and Next Steps
+  * From this lab, the following monitoring strategy emerges:
+
+    > Baseline + anomalies: Understand what normal login, web, DB, and cloud activity looks like, then detect deviations.
+    > Multi-layer correlation: Build workflows that pivot across authentication, endpoint, network, cloud, and DB logs using shared entities (user, host, IP).
+    > Detection content: Translate patterns into:
+      # Search queries for manual threat hunting.
+      # Candidate detection rules for SIEM/SOAR tools.
+
+    > Incident documentation: For each scenario, maintain short incident-style summaries with:
+      # Timeline of events.
+      # Affected assets and identities.
+      # Impact and risk assessment.
+      # Recommended remediation and hardening actions.
+
+______________________________________________________________________________________________________________________________________________________________________________________________________________________________
+
+This documentation, together with the log file and README, forms a self-contained SOC analyst mini-lab suitable for showcasing detection and analysis skills.
+
+______________________________________________________________________________________________________________________________________________________________________________________________________________________________
